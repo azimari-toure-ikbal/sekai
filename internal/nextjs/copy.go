@@ -10,7 +10,7 @@ import (
 	"github.com/azimari-toure-ikbal/translate-core/internal/util" // Import the util package
 )
 
-func RunForNext(files *[]string) error {
+func RunForNextt(files *[]string) error {
 	if !util.CheckIfNextJS() {
 		return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
 	}
@@ -70,26 +70,26 @@ func RunForNext(files *[]string) error {
 	// 	}
 	// }
 
-	if util.IsDebugMode() {
-		fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split((*files)[len(*files) - 1], "/"), "."))
-	}
-
 	originalMap := make(map[string]string)
 	re := regexp.MustCompile(`lines (\d+)-(\d+)`)
 
-	test, _ := util.ParseFile((*files)[len(*files) - 1])
+	for _, el := range(*files) {
+		if util.IsDebugMode() {
+			fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split(el, "/"), "."))
+		}
 
-	for _, val := range(test) {
+		parsed, err := util.ParseFile(el)
 
-		if val != "" {
+		if err != nil {
+			return fmt.Errorf("Later")
+		}
+
+		for _, val := range(parsed) {
 			matches := re.FindStringSubmatch(val)
-	
+
 			if len(matches) == 3 {
 				startLine := matches[1]
-				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split((*files)[len(*files) - 1], "/"), "."),startLine)] = strings.Split(val, ": ")[1]
-
-			} else {
-				return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
+				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split(el, "/"), "."),startLine)] = strings.Split(val, ":")[1]
 			}
 		}
 	}
