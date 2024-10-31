@@ -74,9 +74,9 @@ func RunForNexta(files *[]string) error {
 	re := regexp.MustCompile(`lines (\d+)-(\d+)`)
 
 	for key, el := range(*files) {
-		if util.IsDebugMode() {
-			fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split(el, "/"), "."))
-		}
+		// if util.IsDebugMode() {
+		// 	fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split(el, "/"), "."))
+		// }
 
 		parsed, err := util.ParseFile(el)
 

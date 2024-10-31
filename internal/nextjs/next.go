@@ -10,7 +10,7 @@ import (
 	"github.com/azimari-toure-ikbal/translate-core/internal/util" // Import the util package
 )
 
-func RunForNext(files *[]string) error {
+func RunForNext(files *[]string, inputLang *string) error {
 	if !util.CheckIfNextJS() {
 		return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
 	}
@@ -57,38 +57,17 @@ func RunForNext(files *[]string) error {
 
 	fmt.Printf("We found a total of : %v files\n", len(*files))
 
-
-	// if util.IsDebugMode() {
-	// 	fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split((*files)[105], "/"), "."))
-	// }
-
 	originalMap := make(map[string]string)
 	re := regexp.MustCompile(`lines (\d+)-(\d+)`)
-
-	// test, _ := util.ParseFile((*files)[105])
-
-	// for _, val := range(test) {
-
-	// 	if val != "" {
-	// 		matches := re.FindStringSubmatch(val)
-	
-	// 		if len(matches) == 3 {
-	// 			startLine := matches[1]
-	// 			if strings.Split(val, ": ")[1] != "" {
-	// 				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split((*files)[105], "/"), "."),startLine)] = strings.Split(val, ": ")[1]
-
-	// 			}
-
-
-	// 		} else {
-	// 			return fmt.Errorf("RunForNext:CheckIfNextJS: Something went wrong when collecting texts")
-	// 		}
-	// 	}
-	// }
+	reSpace := regexp.MustCompile(`\s+`)
 
 	for key, el := range(*files) {
-		if util.IsDebugMode() {
-			fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split(el, "/"), "."))
+		
+		r := strings.NewReplacer("[", "", "]", "", "(", "", ")", "", ".page.tsx", "", ".layout.tsx", "", ".page.jsx", "", ".layout.jsx", "", ".tsx", "", ".jsx", "")
+		tradKey := r.Replace(strings.Join(strings.Split(el, "/"), "."))
+
+		if util.IsDebugMode {
+			fmt.Printf("The key to be used is %s\n\n", tradKey)
 		}
 
 		parsed, err := util.ParseFile(el)
@@ -102,13 +81,19 @@ func RunForNext(files *[]string) error {
 
 			if len(matches) == 3 {
 				startLine := matches[1]
-				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split(el, "/"), "."),startLine)] = fmt.Sprintf(" key is %d : val is %s", key, strings.Split(val, ": ")[1])
+				if util.IsDebugMode {
+					originalMap[fmt.Sprintf("%s.%s", tradKey, startLine)] = fmt.Sprintf(" key is %d : val is %s", key, strings.Split(val, ": ")[1])
+				}
+				originalMap[fmt.Sprintf(`"%s.%s"`, tradKey, startLine)] = fmt.Sprintf(`"%s"`, reSpace.ReplaceAllString(strings.TrimSpace(strings.Split(val, ": ")[1]), " "))
 			}
 		}
 	}
 
+	err = util.WriteMapToJSONFile(originalMap, *inputLang)
 
-	fmt.Println(originalMap)
+	if err != nil {
+		return fmt.Errorf("Something went wrong while writing the input file: %v", err)
+	}
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"html"
@@ -12,11 +13,7 @@ import (
 	"github.com/smacker/go-tree-sitter/javascript"
 )
 
-func IsDebugMode() bool {
-    debug := os.Getenv("DEBUG")
-
-    return debug == "true"
-}
+const IsDebugMode = false
 
 func CheckIfNextJS() bool {
 	f, err := os.Open("next.config.mjs")
@@ -156,9 +153,51 @@ func nodeToString(n *sitter.Node, sourceCode []byte, level int, skipNested bool)
 
 func containsOnlyInterpolatedVariables(s string) bool {
     // Define a regular expression pattern for one or more interpolated variables
-    pattern := `^\s*(\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\}|\{\{\d+\}\})+$`
+    pattern := `^\s*("[{]{2}[a-zA-Z_][a-zA-Z0-9_]*[}]{2}"|"{2}\d+[}]{2}"|[{]{2}[a-zA-Z_][a-zA-Z0-9_]*[}]{2}|[{]{2}\d+[}]{2})+$`
     regex := regexp.MustCompile(pattern)
 
     // Check if the entire string consists only of interpolated variables
     return regex.MatchString(s)
+}
+
+func WriteMapToJSONFile(originalMap map[string]string, inputLang string) error {
+    file, err := os.Create(fmt.Sprintf("%s.json", inputLang))
+    if err != nil {
+        return fmt.Errorf("Error creating file: %v", err)
+    }
+    defer file.Close()
+
+    writer := bufio.NewWriter(file)
+    writer.WriteString("{\n")
+
+    count := 0
+    total := len(originalMap)
+
+    // Iterate over the map and write each key-value pair to the file
+    for key, value := range originalMap {
+        count++
+        if count == total {
+            // Last item, don't add a comma
+            _, err := writer.WriteString(fmt.Sprintf("%s: %s\n", key, value))
+            if err != nil {
+                return fmt.Errorf("Error writing to file: %v", err)
+            }
+        } else {
+            // Not the last item, add a comma
+            _, err := writer.WriteString(fmt.Sprintf("%s: %s,\n", key, value))
+            if err != nil {
+                return fmt.Errorf("Error writing to file: %v", err)
+            }
+        }
+    }
+
+    writer.WriteString("}\n")
+
+    // Flush the buffered writer to the file
+    err = writer.Flush()
+    if err != nil {
+        return fmt.Errorf("Error flushing writer: %v", err)
+    }
+
+    return nil
 }
