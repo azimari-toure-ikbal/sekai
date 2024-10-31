@@ -57,39 +57,52 @@ func RunForNext(files *[]string) error {
 
 	fmt.Printf("We found a total of : %v files\n", len(*files))
 
-	// for i, file := range(*files) {
-	// 	if util.DEBUG {
-	// 		fmt.Printf("Found file [%v] %v\n", i, file)
-	// 	}
 
-	// 	_, err := util.ParseFile(file)
-	// 	// util.ParseFile((*files)[10])
-	
-	// 	if err != nil {
-	// 		return fmt.Errorf("RunForNext: Something went wrong when parsing the file %v", err)
-	// 	}
+	// if util.IsDebugMode() {
+	// 	fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split((*files)[105], "/"), "."))
 	// }
-
-	if util.IsDebugMode() {
-		fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split((*files)[len(*files) - 1], "/"), "."))
-	}
 
 	originalMap := make(map[string]string)
 	re := regexp.MustCompile(`lines (\d+)-(\d+)`)
 
-	test, _ := util.ParseFile((*files)[len(*files) - 1])
+	// test, _ := util.ParseFile((*files)[105])
 
-	for _, val := range(test) {
+	// for _, val := range(test) {
 
-		if val != "" {
-			matches := re.FindStringSubmatch(val)
+	// 	if val != "" {
+	// 		matches := re.FindStringSubmatch(val)
 	
+	// 		if len(matches) == 3 {
+	// 			startLine := matches[1]
+	// 			if strings.Split(val, ": ")[1] != "" {
+	// 				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split((*files)[105], "/"), "."),startLine)] = strings.Split(val, ": ")[1]
+
+	// 			}
+
+
+	// 		} else {
+	// 			return fmt.Errorf("RunForNext:CheckIfNextJS: Something went wrong when collecting texts")
+	// 		}
+	// 	}
+	// }
+
+	for key, el := range(*files) {
+		if util.IsDebugMode() {
+			fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split(el, "/"), "."))
+		}
+
+		parsed, err := util.ParseFile(el)
+
+		if err != nil {
+			return fmt.Errorf("Later")
+		}
+
+		for _, val := range(parsed) {
+			matches := re.FindStringSubmatch(val)
+
 			if len(matches) == 3 {
 				startLine := matches[1]
-				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split((*files)[len(*files) - 1], "/"), "."),startLine)] = strings.Split(val, ": ")[1]
-
-			} else {
-				return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
+				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split(el, "/"), "."),startLine)] = fmt.Sprintf(" key is %d : val is %s", key, strings.Split(val, ": ")[1])
 			}
 		}
 	}

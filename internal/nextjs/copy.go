@@ -10,7 +10,7 @@ import (
 	"github.com/azimari-toure-ikbal/translate-core/internal/util" // Import the util package
 )
 
-func RunForNextt(files *[]string) error {
+func RunForNexta(files *[]string) error {
 	if !util.CheckIfNextJS() {
 		return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
 	}
@@ -73,7 +73,7 @@ func RunForNextt(files *[]string) error {
 	originalMap := make(map[string]string)
 	re := regexp.MustCompile(`lines (\d+)-(\d+)`)
 
-	for _, el := range(*files) {
+	for key, el := range(*files) {
 		if util.IsDebugMode() {
 			fmt.Printf("The file path is %s\n\n", strings.Join(strings.Split(el, "/"), "."))
 		}
@@ -89,7 +89,7 @@ func RunForNextt(files *[]string) error {
 
 			if len(matches) == 3 {
 				startLine := matches[1]
-				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split(el, "/"), "."),startLine)] = strings.Split(val, ":")[1]
+				originalMap[fmt.Sprintf("%s.%s", strings.Join(strings.Split(el, "/"), "."),startLine)] = fmt.Sprintf(" key is %d : val is %s", key, strings.Split(val, ": ")[1])
 			}
 		}
 	}
