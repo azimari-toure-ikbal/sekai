@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/azimari-toure-ikbal/translate-core/internal/util" // Import the util package
 )
 
-func RunForNext(files *[]string, inputLang *string) error {
+func RunForNext(files *[]string, inputLang, outputLang *string) error {
 	if !util.CheckIfNextJS() {
 		return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
 	}
@@ -95,5 +96,17 @@ func RunForNext(files *[]string, inputLang *string) error {
 		return fmt.Errorf("Something went wrong while writing the input file: %v", err)
 	}
 
+	url := "http://localhost:11434/api/generate"
+	model := "trad"
+	start := time.Now()
+	results := util.TranslateConcurrently(url, model, *inputLang, *outputLang, originalMap)
+	fmt.Printf("All translations completed in %v\n", time.Since(start))
+
+	err = util.WriteMapToJSONFile(results, *outputLang)
+
+	if err != nil {
+		return fmt.Errorf("Something went wrong while writing the output file: %v", err)
+	}
+		
 	return nil
 }

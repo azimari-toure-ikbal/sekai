@@ -2,12 +2,17 @@ package util
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
+	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
@@ -161,7 +166,7 @@ func containsOnlyInterpolatedVariables(s string) bool {
 }
 
 func WriteMapToJSONFile(originalMap map[string]string, inputLang string) error {
-    file, err := os.Create(fmt.Sprintf("%s.json", inputLang))
+    file, err := os.Create(fmt.Sprintf("./locales/%s.json", inputLang))
     if err != nil {
         return fmt.Errorf("Error creating file: %v", err)
     }
@@ -200,4 +205,112 @@ func WriteMapToJSONFile(originalMap map[string]string, inputLang string) error {
     }
 
     return nil
+}
+
+
+
+type TranslationChunk struct {
+	Response string `json:"response"`
+	Done     bool   `json:"done"`
+}
+
+// translate sends a single translation request and reads the streamed response.
+func translate(url, model, input, output, text string) (string, error) {
+	payload := map[string]interface{}{
+		"model":  model,
+		"prompt": fmt.Sprintf("%s:%s: %s", input, output, text),
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("error marshalling JSON: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("error creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var translationResult string
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("error reading response line: %w", err)
+		}
+
+		var chunk TranslationChunk
+		if err := json.Unmarshal(line, &chunk); err != nil {
+			return "", fmt.Errorf("error unmarshalling response chunk: %w", err)
+		}
+
+		translationResult += chunk.Response
+		if chunk.Done {
+			break
+		}
+	}
+
+	return translationResult, nil
+}
+
+// translateConcurrently processes translations in parallel and tracks progress.
+func TranslateConcurrently(url, model, input, output string, texts map[string]string) map[string]string {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10) // Limit to 10 concurrent requests
+	progress := make(chan string)   // Channel to track progress
+	results := make(map[string]string)
+	resultsMu := sync.Mutex{}
+
+	// Goroutine to monitor progress
+	go func() {
+		total := len(texts)
+		completed := 0
+		for range progress {
+			completed++
+			// Update a single line with carriage return
+			fmt.Printf("\rProgress: %d/%d translations completed", completed, total)
+		}
+		fmt.Println() // New line after all translations are complete
+	}()
+
+	for key, text := range texts {
+		wg.Add(1)
+		sem <- struct{}{} // Acquire a spot
+
+		go func(key, text string) {
+			defer wg.Done()
+			defer func() { <-sem }() // Release the spot
+
+			translatedText, err := translate(url, model, input, output, text)
+			if err != nil {
+				fmt.Printf("Error translating key %q: %v\n", key, err)
+				return
+			}
+
+			// Store result safely
+			resultsMu.Lock()
+			results[key] = strings.TrimSpace(strings.Split(translatedText, ":")[1])
+			resultsMu.Unlock()
+
+			// Send progress update
+			progress <- key
+		}(key, text)
+	}
+
+	// Wait for all translations to complete
+	wg.Wait()
+	close(progress)
+
+	return results
 }

@@ -49,7 +49,7 @@ func Run() error {
 
 	switch devEnvFlag {
 		case "nextjs":
-			err := nextjs.RunForNext(&files, &inputLang)
+			err := nextjs.RunForNext(&files, &inputLang, &outputLang)
 			if err != nil {
 				return err
 			}
