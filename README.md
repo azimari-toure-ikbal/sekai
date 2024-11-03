@@ -7,6 +7,7 @@
 - **Automatic Crawling**: No need to feed it any information. Sekai will explore your project, locating all text strings within your files.
 - **Localization Generation**: Generates both original and translated localization files effortlessly.
 - **Current Framework**: Tested with Next.js `.jsx` and `.tsx`. Future support for additional frameworks and platforms, starting with Flutter and WordPress, is planned.
+- **Current Languages**: English, French, German, Spanish, and Portuguese.
 
 ## Output Structure
 
