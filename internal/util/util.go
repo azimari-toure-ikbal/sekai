@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 	"html"
-    "path/filepath"
 	"os"
 	"regexp"
 	"strings"
     "encoding/json"
+    "strconv"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
@@ -134,66 +134,30 @@ func parseDartFile(source []byte) ([]string, error) {
                 extractedText := strings.TrimSpace(match[1])
                 
                 // More robust string extraction
-                stringRe := regexp.MustCompile(`(['"])(?:\\.|[^\\])*?\1`)
+                stringRe := regexp.MustCompile(`'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"`)
                 stringMatches := stringRe.FindAllString(extractedText, -1)
                 
                 for _, stringMatch := range stringMatches {
-                    // Remove surrounding quotes and unescape
-                    cleaned := unescapeString(stringMatch)
+                    // Remove surrounding quotes
+                    cleaned := stringMatch[1 : len(stringMatch)-1]
+                    
+                    // Unescape any escaped characters
+                    unescaped, err := strconv.Unquote(stringMatch)
+                    if err == nil {
+                        cleaned = unescaped
+                    }
                     
                     // Avoid empty strings and duplicates
                     if cleaned != "" && !contains(parsedStrings, cleaned) {
                         LogVerbose("Captured string: %s", cleaned)
                         parsedStrings = append(parsedStrings, cleaned)
                     }
-                }
-            }
+                }            }
         }
     }
 
     LogVerbose("Parsed strings: %v", parsedStrings)
     return parsedStrings, nil
-}
-
-// Unescaping function to handle escaped characters
-func unescapeString(s string) string {
-    if len(s) < 2 {
-        return s
-    }
-    
-    // Remove surrounding quotes
-    s = s[1 : len(s)-1]
-    
-    // Manual unescaping
-    var result strings.Builder
-    for i := 0; i < len(s); i++ {
-        if s[i] == '\\' && i+1 < len(s) {
-            // Handle escape sequences
-            switch s[i+1] {
-            case 'n':
-                result.WriteRune('\n')
-            case 'r':
-                result.WriteRune('\r')
-            case 't':
-                result.WriteRune('\t')
-            case '"':
-                result.WriteByte('"')
-            case '\'':
-                result.WriteByte('\'')
-            case '\\':
-                result.WriteByte('\\')
-            default:
-                // If unknown escape sequence, just write both characters
-                result.WriteByte(s[i])
-                result.WriteByte(s[i+1])
-            }
-            i++ // Skip the next character
-        } else {
-            result.WriteByte(s[i])
-        }
-    }
-    
-    return result.String()
 }
 
 // Helper function to check for duplicates
@@ -205,6 +169,7 @@ func contains(slice []string, item string) bool {
     }
     return false
 }
+
 func ParseFile(file string) ([]string, error) {
 	LogVerbose("\n\nParsing file: %s", file)
 	source, err := os.ReadFile(file)
@@ -369,48 +334,50 @@ func SanitizeKey(input string) string {
 	return re.ReplaceAllString(strings.ToLower(input), "_")
 }
 
-func WriteMapToJSONFileFlutter(originalMap map[string]string, outputFile string) error {
-	LogVerbose("\n\nStarting WriteMapToJSONFileFlutter...")
-	LogVerbose("Output file: %s", outputFile)
+func WriteMapToJSONFileFlutter(originalMap map[string]string, inputLang string) error {
+    LogVerbose("\n\nStarting WriteMapToJSONFileFlutter...")
+    outputFile := fmt.Sprintf("%s", inputLang) // Use inputLang to define the output file name
+    LogVerbose("Output file: %s", outputFile)
 
-	// Step 1: Prepare data
-	LogVerbose("Preparing data for the JSON file...")
-	data := map[string]interface{}{
-		"@@locale": strings.TrimSuffix(filepath.Base(outputFile), ".arb"),
-	}
+    // Step 1: Prepare data
+    LogVerbose("Preparing data for the JSON file...")
+    data := map[string]interface{}{
+        "@@locale": inputLang, // Use inputLang as the locale
+    }
 
     LogVerbose("\nOriginal map: %v", originalMap)
 
-	for key, value := range originalMap {
-		LogVerbose("Adding key: '%s', value: '%s'", key, value)
-		data[key] = value
-		data[fmt.Sprintf("@%s", key)] = map[string]string{
-			"description": value,
-		}
-	}
-	LogVerbose("Data preparation complete. Total keys: %d", len(originalMap))
+    for key, value := range originalMap {
+        LogVerbose("Adding key: '%s', value: '%s'", key, value)
+        data[key] = value
+        data[fmt.Sprintf("@%s", key)] = map[string]string{
+            "description": value,
+        }
+    }
+    LogVerbose("Data preparation complete. Total keys: %d", len(originalMap))
 
-	// Step 2: Create the file
-	LogVerbose("Creating file: %s", outputFile)
-	file, err := os.Create(outputFile)
-	if err != nil {
-		LogVerbose("Error creating file '%s': %v", outputFile, err)
-		return fmt.Errorf("Error creating file: %v", err)
-	}
-	defer func() {
-		LogVerbose("Closing file: %s", outputFile)
-		file.Close()
-	}()
+    // Step 2: Create the file
+    LogVerbose("Creating file: %s", outputFile)
+    file, err := os.Create(outputFile)
+    if err != nil {
+        LogVerbose("Error creating file '%s': %v", outputFile, err)
+        return fmt.Errorf("Error creating file: %v", err)
+    }
+    defer func() {
+        LogVerbose("Closing file: %s", outputFile)
+        file.Close()
+    }()
 
-	// Step 3: Encode the data to JSON
-	LogVerbose("Encoding data to JSON...")
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(data); err != nil {
-		LogVerbose("Error encoding data to JSON: %v", err)
-		return fmt.Errorf("Error writing to JSON file: %v", err)
-	}
+    // Step 3: Encode the data to JSON
+    LogVerbose("Encoding data to JSON...")
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    if err := encoder.Encode(data); err != nil {
+        LogVerbose("Error encoding data to JSON: %v", err)
+        return fmt.Errorf("Error writing to JSON file: %v", err)
+    }
 
-	LogVerbose("Successfully wrote JSON data to file: %s", outputFile)
-	return nil
+    LogVerbose("Successfully wrote JSON data to file: %s", outputFile)
+    return nil
 }
+
