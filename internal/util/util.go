@@ -91,26 +91,61 @@ func parseJSFile(source []byte) ([]string, error) {
 
 func parseDartFile(source []byte) ([]string, error) {
     LogVerbose("\n\nParsing Dart file...")
-    // Extended regex to match various text patterns
-    re := regexp.MustCompile(`(?:Text|ElevatedButton|ListTile)\s*\(\s*(.*?["'].*?["'].*?)\)`)
-    LogVerbose("Regular expression: %v", re)
-
-    matches := re.FindAllStringSubmatch(string(source), -1)
-    LogVerbose("Matches: %v", matches)
+    
+    // Comprehensive regex patterns for various text-displaying widgets and components
+    textPatterns := []string{
+        // Direct Text widgets
+        `Text\s*\(\s*([^)]+)\)`,
+        
+        // TextSpan patterns
+        `TextSpan\s*\(\s*text:\s*([^,)]+)`,
+        
+        // RichText patterns
+        `RichText\s*\(\s*.*?text:\s*([^,)]+)`,
+        
+        // TextField patterns
+        `TextField\s*\(\s*(?:decoration:\s*InputDecoration\s*\(\s*)?(?:label|hint|error)?Text:\s*([^,)]+)`,
+        
+        // AppBar title
+        `AppBar\s*\(\s*title:\s*Text\s*\(\s*([^)]+)\)`,
+        
+        // SnackBar content
+        `SnackBar\s*\(\s*content:\s*Text\s*\(\s*([^)]+)\)`,
+        
+        // Dialog text
+        `(?:AlertDialog|SimpleDialog)\s*\(\s*(?:title|content):\s*Text\s*\(\s*([^)]+)\)`,
+        
+        // Tooltip patterns
+        `Tooltip\s*\(\s*message:\s*([^,)]+)`,
+        
+        // Tab patterns
+        `Tab\s*\(\s*text:\s*([^,)]+)`,
+    }
 
     parsedStrings := []string{}
-    for _, match := range matches {
-        if len(match) > 1 {
-            extractedText := strings.TrimSpace(match[1])
-            LogVerbose("Extracted text candidate: %s", extractedText)
+    sourceStr := string(source)
 
-            // Check for strings or expressions inside the match
-            stringRe := regexp.MustCompile(`["'](.+?)["']`)
-            stringMatches := stringRe.FindAllStringSubmatch(extractedText, -1)
-            for _, stringMatch := range stringMatches {
-                if len(stringMatch) > 1 {
-                    LogVerbose("Captured string: %s", stringMatch[1])
-                    parsedStrings = append(parsedStrings, stringMatch[1])
+    for _, pattern := range textPatterns {
+        re := regexp.MustCompile(pattern)
+        matches := re.FindAllStringSubmatch(sourceStr, -1)
+        
+        for _, match := range matches {
+            if len(match) > 1 {
+                extractedText := strings.TrimSpace(match[1])
+                
+                // More robust string extraction
+                stringRe := regexp.MustCompile(`(['"])(?:\\.|[^\\])*?\1`)
+                stringMatches := stringRe.FindAllString(extractedText, -1)
+                
+                for _, stringMatch := range stringMatches {
+                    // Remove surrounding quotes and unescape
+                    cleaned := unescapeString(stringMatch)
+                    
+                    // Avoid empty strings and duplicates
+                    if cleaned != "" && !contains(parsedStrings, cleaned) {
+                        LogVerbose("Captured string: %s", cleaned)
+                        parsedStrings = append(parsedStrings, cleaned)
+                    }
                 }
             }
         }
@@ -120,7 +155,56 @@ func parseDartFile(source []byte) ([]string, error) {
     return parsedStrings, nil
 }
 
+// Unescaping function to handle escaped characters
+func unescapeString(s string) string {
+    if len(s) < 2 {
+        return s
+    }
+    
+    // Remove surrounding quotes
+    s = s[1 : len(s)-1]
+    
+    // Manual unescaping
+    var result strings.Builder
+    for i := 0; i < len(s); i++ {
+        if s[i] == '\\' && i+1 < len(s) {
+            // Handle escape sequences
+            switch s[i+1] {
+            case 'n':
+                result.WriteRune('\n')
+            case 'r':
+                result.WriteRune('\r')
+            case 't':
+                result.WriteRune('\t')
+            case '"':
+                result.WriteByte('"')
+            case '\'':
+                result.WriteByte('\'')
+            case '\\':
+                result.WriteByte('\\')
+            default:
+                // If unknown escape sequence, just write both characters
+                result.WriteByte(s[i])
+                result.WriteByte(s[i+1])
+            }
+            i++ // Skip the next character
+        } else {
+            result.WriteByte(s[i])
+        }
+    }
+    
+    return result.String()
+}
 
+// Helper function to check for duplicates
+func contains(slice []string, item string) bool {
+    for _, v := range slice {
+        if v == item {
+            return true
+        }
+    }
+    return false
+}
 func ParseFile(file string) ([]string, error) {
 	LogVerbose("\n\nParsing file: %s", file)
 	source, err := os.ReadFile(file)
