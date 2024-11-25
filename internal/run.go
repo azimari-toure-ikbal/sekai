@@ -5,13 +5,17 @@ import (
 	"fmt"
 
 	"github.com/azimari-toure-ikbal/translate-core/internal/nextjs"
+	"github.com/azimari-toure-ikbal/translate-core/internal/flutter"
+	"github.com/azimari-toure-ikbal/translate-core/internal/util"
 )
 
 func Run() error {
 	var devEnvFlag, inputLang, outputLang string
 	var files []string
+	var verbose bool // New verbose flag
 
 	acceptedLang := []string{"fr", "en", "de", "it", "jp", "po", "es"}
+
 	// Helper function to check if the selected language is valid
 	isValidLang := func(lang string, acceptedLangs []string) bool {
 		for _, l := range acceptedLangs {
@@ -22,13 +26,22 @@ func Run() error {
 		return false
 	}
 
-	flag.StringVar(&devEnvFlag, "env", "nextjs", "We only support NextJS for the moment")
+	// Define flags
+	flag.StringVar(&devEnvFlag, "env", "nextjs", "We support NextJS and Flutter projects")
 	flag.StringVar(&inputLang, "i", "en", "Please select the input language")
-	flag.StringVar(&outputLang, "o", "", "Please select the ouput language")
+	flag.StringVar(&outputLang, "o", "", "Please select the output language")
+	flag.BoolVar(&verbose, "v", false, "Enable verbose mode") // Add verbose flag
 	flag.Parse()
 
+
+	// Enable verbose mode for relevant modules
+	if verbose {
+		fmt.Println("Verbose mode enabled")
+		util.EnableVerbose()
+	}
+
 	if devEnvFlag != "nextjs" && devEnvFlag != "flutter" {
-		return fmt.Errorf("You can't do that brother")
+		return fmt.Errorf("Invalid environment. We support only NextJS and Flutter for now")
 	}
 
 	if inputLang == "" {
@@ -40,7 +53,7 @@ func Run() error {
 	}
 
 	if !isValidLang(outputLang, acceptedLang) {
-		return fmt.Errorf("You must chose a valid output language in this list %v", acceptedLang)
+		return fmt.Errorf("You must choose a valid output language from this list: %v", acceptedLang)
 	}
 
 	if inputLang == outputLang {
@@ -48,13 +61,18 @@ func Run() error {
 	}
 
 	switch devEnvFlag {
-		case "nextjs":
-			err := nextjs.RunForNext(&files, &inputLang)
-			if err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("You provided a wrong value of env. We only support --env nextjs for the moment")
+	case "nextjs":
+		err := nextjs.RunForNext(&files, &inputLang)
+		if err != nil {
+			return err
+		}
+	case "flutter":
+		err := flutter.RunForFlutter(&files, &inputLang)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("Invalid environment. We support only NextJS and Flutter for now")
 	}
 
 	return nil

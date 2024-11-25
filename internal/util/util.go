@@ -5,15 +5,31 @@ import (
 	"context"
 	"fmt"
 	"html"
+    "path/filepath"
 	"os"
 	"regexp"
 	"strings"
+    "encoding/json"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
 )
 
 const IsDebugMode = false
+var verbose bool = false
+
+// EnableVerbose sets the verbose mode
+func EnableVerbose() {
+	verbose = true
+}
+
+
+// logVerbose logs messages only if verbose mode is enabled
+func LogVerbose(format string, args ...interface{}) {
+	if verbose {
+		fmt.Printf(format+"\n", args...)
+	}
+}
 
 func CheckIfNextJS() bool {
 	f, err := os.Open("next.config.mjs")
@@ -26,6 +42,21 @@ func CheckIfNextJS() bool {
 
 	return true
 }
+
+func CheckIfFlutter() bool {
+    //look for a lib folder or a pubspec.yaml file
+    _, err := os.Stat("lib")
+    if err != nil {
+        return false
+    }
+
+    _, err = os.Stat("pubspec.yaml")
+    if err != nil {
+        return false
+    }
+    return true
+}
+
 
 func ReadConfig() string {
 	fmt.Println("Searching for transcore config file...")
@@ -40,42 +71,88 @@ func ReadConfig() string {
 	return string(data)
 }
 
-func ParseFile(file string) ([]string, error){
-    source, err := os.ReadFile(file)
-
-    if err != nil {
-        return nil, fmt.Errorf("util:ParseFile: couldn't open the file %v", file)
-    }
-
-    // Revert any encoded character to its original value
-    unescapedSource := []byte(html.UnescapeString(string(source)))
-
-    // fmt.Println(string(unescapedSource))
-
-
+func parseJSFile(source []byte) ([]string, error) {
     parser := sitter.NewParser()
     parser.SetLanguage(javascript.GetLanguage())
 
-    tree, err := parser.ParseCtx(context.Background(), nil, unescapedSource)
-
+    tree, err := parser.ParseCtx(context.Background(), nil, source)
     if err != nil {
-        return nil, fmt.Errorf("util:ParseFile: something went wrong when parsing the source")
+        return nil, fmt.Errorf("util:parseJSFile: error parsing JavaScript source")
     }
 
     rootNode := tree.RootNode()
-
     jsxElements := []string{}
 
-    // Traverse the AST and collect the elements
-    collectJSXElements(rootNode, unescapedSource, &jsxElements)
-
-    // fmt.Println(rootNode)
-
-    // if DEBUG {
-    //     fmt.Printf("Length of jsx elements is %v\n\n", len(jsxElements))
-    // }
+    // Traverse the AST and collect JSX elements
+    collectJSXElements(rootNode, source, &jsxElements)
 
     return jsxElements, nil
+}
+
+func parseDartFile(source []byte) ([]string, error) {
+    LogVerbose("\n\nParsing Dart file...")
+    // Extended regex to match various text patterns
+    re := regexp.MustCompile(`(?:Text|ElevatedButton|ListTile)\s*\(\s*(.*?["'].*?["'].*?)\)`)
+    LogVerbose("Regular expression: %v", re)
+
+    matches := re.FindAllStringSubmatch(string(source), -1)
+    LogVerbose("Matches: %v", matches)
+
+    parsedStrings := []string{}
+    for _, match := range matches {
+        if len(match) > 1 {
+            extractedText := strings.TrimSpace(match[1])
+            LogVerbose("Extracted text candidate: %s", extractedText)
+
+            // Check for strings or expressions inside the match
+            stringRe := regexp.MustCompile(`["'](.+?)["']`)
+            stringMatches := stringRe.FindAllStringSubmatch(extractedText, -1)
+            for _, stringMatch := range stringMatches {
+                if len(stringMatch) > 1 {
+                    LogVerbose("Captured string: %s", stringMatch[1])
+                    parsedStrings = append(parsedStrings, stringMatch[1])
+                }
+            }
+        }
+    }
+
+    LogVerbose("Parsed strings: %v", parsedStrings)
+    return parsedStrings, nil
+}
+
+
+func ParseFile(file string) ([]string, error) {
+	LogVerbose("\n\nParsing file: %s", file)
+	source, err := os.ReadFile(file)
+	if err != nil {
+		LogVerbose("Error opening file %s: %v", file, err)
+		return nil, fmt.Errorf("util:ParseFile: couldn't open the file %v", file)
+	}
+
+	unescapedSource := []byte(html.UnescapeString(string(source)))
+
+	var parsedElements []string
+	if strings.HasSuffix(file, ".dart") {
+		LogVerbose("Detected Dart file. Parsing...")
+		parsedElements, err = parseDartFile(unescapedSource)
+		if err != nil {
+			LogVerbose("Error parsing Dart file %s: %v", file, err)
+			return nil, fmt.Errorf("util:ParseFile: error parsing Dart file: %v", err)
+		}
+	} else if strings.HasSuffix(file, ".js") || strings.HasSuffix(file, ".jsx") || strings.HasSuffix(file, ".tsx") {
+		LogVerbose("Detected JavaScript/TypeScript file. Parsing...")
+		parsedElements, err = parseJSFile(unescapedSource)
+		if err != nil {
+			LogVerbose("Error parsing JavaScript/TypeScript file %s: %v", file, err)
+			return nil, fmt.Errorf("util:ParseFile: error parsing JavaScript/TypeScript file: %v", err)
+		}
+	} else {
+		LogVerbose("Unsupported file type: %s", file)
+		return nil, fmt.Errorf("util:ParseFile: unsupported file type for %v", file)
+	}
+
+	LogVerbose("Successfully parsed file: %s", file)
+	return parsedElements, nil
 }
 
 // collectJSXElements recursively traverses the AST and collects JSX elements' AST representations
@@ -200,4 +277,56 @@ func WriteMapToJSONFile(originalMap map[string]string, inputLang string) error {
     }
 
     return nil
+}
+
+func SanitizeKey(input string) string {
+	// Sanitize text for ARB keys (remove special characters, spaces, etc.)
+	re := regexp.MustCompile(`[^\w]+`)
+	return re.ReplaceAllString(strings.ToLower(input), "_")
+}
+
+func WriteMapToJSONFileFlutter(originalMap map[string]string, outputFile string) error {
+	LogVerbose("\n\nStarting WriteMapToJSONFileFlutter...")
+	LogVerbose("Output file: %s", outputFile)
+
+	// Step 1: Prepare data
+	LogVerbose("Preparing data for the JSON file...")
+	data := map[string]interface{}{
+		"@@locale": strings.TrimSuffix(filepath.Base(outputFile), ".arb"),
+	}
+
+    LogVerbose("\nOriginal map: %v", originalMap)
+
+	for key, value := range originalMap {
+		LogVerbose("Adding key: '%s', value: '%s'", key, value)
+		data[key] = value
+		data[fmt.Sprintf("@%s", key)] = map[string]string{
+			"description": value,
+		}
+	}
+	LogVerbose("Data preparation complete. Total keys: %d", len(originalMap))
+
+	// Step 2: Create the file
+	LogVerbose("Creating file: %s", outputFile)
+	file, err := os.Create(outputFile)
+	if err != nil {
+		LogVerbose("Error creating file '%s': %v", outputFile, err)
+		return fmt.Errorf("Error creating file: %v", err)
+	}
+	defer func() {
+		LogVerbose("Closing file: %s", outputFile)
+		file.Close()
+	}()
+
+	// Step 3: Encode the data to JSON
+	LogVerbose("Encoding data to JSON...")
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		LogVerbose("Error encoding data to JSON: %v", err)
+		return fmt.Errorf("Error writing to JSON file: %v", err)
+	}
+
+	LogVerbose("Successfully wrote JSON data to file: %s", outputFile)
+	return nil
 }
