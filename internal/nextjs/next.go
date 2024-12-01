@@ -85,7 +85,7 @@ func RunForNext(files *[]string, inputLang, outputLang *string) error {
 				if util.IsDebugMode {
 					originalMap[fmt.Sprintf("%s.%s", tradKey, startLine)] = fmt.Sprintf(" key is %d : val is %s", key, strings.Split(val, ": ")[1])
 				}
-				originalMap[fmt.Sprintf(`"%s.%s"`, tradKey, startLine)] = fmt.Sprintf(`"%s"`, reSpace.ReplaceAllString(strings.TrimSpace(strings.Split(val, ": ")[1]), " "))
+				originalMap[fmt.Sprintf(`"%s.%s"`, tradKey, startLine)] = fmt.Sprintf(`"%s"`, util.ReplaceApos(reSpace.ReplaceAllString(strings.TrimSpace(strings.Split(val, ": ")[1]), " ")))
 			}
 		}
 	}
@@ -101,6 +101,10 @@ func RunForNext(files *[]string, inputLang, outputLang *string) error {
 	start := time.Now()
 	results := util.TranslateConcurrently(url, model, *inputLang, *outputLang, originalMap)
 	fmt.Printf("All translations completed in %v\n", time.Since(start))
+
+	// for key, val := range results {
+	// 	results[key]
+	// }
 
 	err = util.WriteMapToJSONFile(results, *outputLang)
 

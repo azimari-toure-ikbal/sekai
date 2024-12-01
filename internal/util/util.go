@@ -21,20 +21,22 @@ import (
 const IsDebugMode = false
 
 func CheckIfNextJS() bool {
-	f, err := os.Open("next.config.mjs")
+	f1, err1 := os.Open("next.config.mjs")
+    f2, err2 := os.Open("next.config.js")
 	
-	if err != nil {
+	if err1 != nil && err2 != nil {
 		return false
 	}
 	
-	defer f.Close()
+	defer f1.Close()
+    defer f2.Close()
 
 	return true
 }
 
 func ReadConfig() string {
 	fmt.Println("Searching for transcore config file...")
-	data, err := os.ReadFile(".transcore")
+	data, err := os.ReadFile(".sekaiignore")
 
 	if err != nil {
 		fmt.Println("Couldn't find config file. Proceed with default options")
@@ -300,7 +302,7 @@ func TranslateConcurrently(url, model, input, output string, texts map[string]st
 
 			// Store result safely
 			resultsMu.Lock()
-			results[key] = strings.TrimSpace(strings.Split(translatedText, ":")[1])
+			results[key] = fmt.Sprintf(`"%s"`, ReplaceApos(strings.TrimSpace(strings.Split(translatedText, ":")[1])))
 			resultsMu.Unlock()
 
 			// Send progress update
@@ -313,4 +315,9 @@ func TranslateConcurrently(url, model, input, output string, texts map[string]st
 	close(progress)
 
 	return results
+}
+
+func ReplaceApos(text string) string {
+    r := strings.NewReplacer(`"`, `'`)
+    return r.Replace(text)
 }
