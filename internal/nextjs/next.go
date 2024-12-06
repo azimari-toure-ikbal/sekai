@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azimari-toure-ikbal/translate-core/internal/util" // Import the util package
+	"github.com/azimari-toure-ikbal/sekai-core/internal/util" // Import the util package
 )
 
 func RunForNext(files *[]string, inputLang, outputLang *string) error {
@@ -27,8 +27,10 @@ func RunForNext(files *[]string, inputLang, outputLang *string) error {
 		".jsx",
 	}
 
-	if util.ReadConfig() != "" {
-		dirToSkip = append(dirToSkip, strings.Split(util.ReadConfig(), "\n")...)
+	config := util.ReadConfig()
+
+	if config != "" {
+		dirToSkip = append(dirToSkip, strings.Split(config, "\n")...)
 	}
 	
 	err := filepath.Walk(".", func(path string, f os.FileInfo, err error) error {

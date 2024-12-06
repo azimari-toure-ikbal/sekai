@@ -5,7 +5,7 @@ build:
 	@echo "Building..."
 	
 	
-	@go build -o bin/main cmd/app/main.go
+	@go build -o bin/sekai-core cmd/app/main.go
 
 # Run the application
 run:
@@ -19,4 +19,4 @@ test:
 # Clean the binary
 clean:
 	@echo "Cleaning..."
-	@rm -f bin/main
+	@rm -f bin/sekai-core
