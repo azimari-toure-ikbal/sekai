@@ -2,15 +2,21 @@ package util
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
+	"io"
+	"net/http"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
     "encoding/json"
     "strconv"
-
+	"sync"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
 )
@@ -32,13 +38,15 @@ func LogVerbose(format string, args ...interface{}) {
 }
 
 func CheckIfNextJS() bool {
-	f, err := os.Open("next.config.mjs")
+	f1, err1 := os.Open("next.config.mjs")
+    f2, err2 := os.Open("next.config.js")
 	
-	if err != nil {
+	if err1 != nil && err2 != nil {
 		return false
 	}
 	
-	defer f.Close()
+	defer f1.Close()
+    defer f2.Close()
 
 	return true
 }
@@ -60,14 +68,14 @@ func CheckIfFlutter() bool {
 
 func ReadConfig() string {
 	fmt.Println("Searching for transcore config file...")
-	data, err := os.ReadFile(".transcore")
+	data, err := os.ReadFile(".sekai.config")
 
 	if err != nil {
 		fmt.Println("Couldn't find config file. Proceed with default options")
 		return ""
 	}
 	
-	fmt.Println("Found transcore config file!")
+	fmt.Println("Found sekai-core config file!")
 	return string(data)
 }
 
@@ -276,7 +284,6 @@ func nodeToString(n *sitter.Node, sourceCode []byte, level int, skipNested bool)
     return builder.String()
 }
 
-
 func containsOnlyInterpolatedVariables(s string) bool {
     // Define a regular expression pattern for one or more interpolated variables
     pattern := `^\s*("[{]{2}[a-zA-Z_][a-zA-Z0-9_]*[}]{2}"|"{2}\d+[}]{2}"|[{]{2}[a-zA-Z_][a-zA-Z0-9_]*[}]{2}|[{]{2}\d+[}]{2})+$`
@@ -286,46 +293,161 @@ func containsOnlyInterpolatedVariables(s string) bool {
     return regex.MatchString(s)
 }
 
+// WriteMapToJSONFile writes a map to a JSON file, sorted by key grouping and line number.
 func WriteMapToJSONFile(originalMap map[string]string, inputLang string) error {
-    file, err := os.Create(fmt.Sprintf("%s.json", inputLang))
-    if err != nil {
-        return fmt.Errorf("Error creating file: %v", err)
+	// Ensure the locales directory exists
+	err := os.MkdirAll("./locales", os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error creating locales directory: %v", err)
+	}
+
+	// Extract and sort keys
+	keys := make([]string, 0, len(originalMap))
+	for key := range originalMap {
+		keys = append(keys, key)
+	}
+
+	// Sort keys logically by path and line number
+	sort.Slice(keys, func(i, j int) bool {
+		pathI, lineI := splitKey(keys[i])
+		pathJ, lineJ := splitKey(keys[j])
+
+		if pathI == pathJ {
+			return lineI < lineJ // Sort by line number if paths are equal
+		}
+		return pathI < pathJ // Sort by path
+	})
+
+	// Create the JSON file
+	file, err := os.Create(fmt.Sprintf("./locales/%s.json", inputLang))
+	if err != nil {
+		return fmt.Errorf("error creating file: %v", err)
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	writer.WriteString("{\n")
+
+	// Write sorted key-value pairs to the file
+	for i, key := range keys {
+		value := originalMap[key]
+
+		// Write key-value pair without escaping
+		_, err := writer.WriteString(fmt.Sprintf("%s: %s", key, value))
+		if err != nil {
+			return fmt.Errorf("error writing to file: %v", err)
+		}
+
+		// Add a comma except for the last item
+		if i < len(keys)-1 {
+			writer.WriteString(",\n")
+		} else {
+			writer.WriteString("\n")
+		}
+	}
+
+	writer.WriteString("}\n")
+
+	// Flush the buffered writer
+	err = writer.Flush()
+	if err != nil {
+		return fmt.Errorf("error flushing writer: %v", err)
+	}
+
+	return nil
+}
+
+// splitKey splits a key into its path and line number for sorting.
+func splitKey(key string) (string, int) {
+	// Matches the last segment of the key as a number
+	re := regexp.MustCompile(`^(.*)\.(\d+)$`)
+	matches := re.FindStringSubmatch(key)
+
+	if len(matches) != 3 {
+		return key, 0 // Return the original key and a default number if it doesn't match the format
+	}
+
+	// Extract path and line number
+	line, _ := strconv.Atoi(matches[2]) // Convert line number to int
+	return matches[1], line
+}
+
+type TranslationChunk struct {
+	Response string `json:"response"`
+	Done     bool   `json:"done"`
+}
+
+
+// TranslateConcurrently processes translations in parallel and tracks progress.
+func TranslateConcurrently(url, model, input, output string, texts map[string]string) map[string]string {
+    var wg sync.WaitGroup
+    sem := make(chan struct{}, 10) // Limit to 10 concurrent requests
+    progress := make(chan string) // Channel to track progress
+    results := make(map[string]string)
+    resultsMu := sync.Mutex{}
+    malformedTranslations := make(map[string]string) // To log malformed responses
+
+    // Goroutine to monitor progress
+    go func() {
+        total := len(texts)
+        completed := 0
+        for range progress {
+            completed++
+            fmt.Printf("\rProgress: %d/%d translations completed", completed, total)
+        }
+        fmt.Println() // New line after all translations are complete
+    }()
+
+    for key, text := range texts {
+        wg.Add(1)
+        sem <- struct{}{} // Acquire a spot
+
+        go func(key, text string) {
+            defer wg.Done()
+            defer func() { <-sem }() // Release the spot
+
+            translatedText, err := translate(url, model, input, output, text)
+            if err != nil {
+                fmt.Printf("Error translating key %q: %v\n", key, err)
+                return
+            }
+
+            // Validate split result
+            parts := strings.Split(translatedText, ":")
+            if len(parts) < 2 {
+                // fmt.Printf("\n /?\\ Malformed response for key %s: %s /?\\ \n\n", key, translatedText)
+
+                // Store malformed translation for further inspection
+                resultsMu.Lock()
+                malformedTranslations[key] = translatedText
+                resultsMu.Unlock()
+                return
+            }
+
+            // Safely store the result
+            cleanedResult := ReplaceApos(strings.TrimSpace(parts[1]))
+            resultsMu.Lock()
+            results[key] = fmt.Sprintf(`"%s"`, cleanedResult)
+            resultsMu.Unlock()
+
+            // Send progress update
+            progress <- key
+        }(key, text)
     }
-    defer file.Close()
 
-    writer := bufio.NewWriter(file)
-    writer.WriteString("{\n")
+    // Wait for all translations to complete
+    wg.Wait()
+    close(progress)
 
-    count := 0
-    total := len(originalMap)
-
-    // Iterate over the map and write each key-value pair to the file
-    for key, value := range originalMap {
-        count++
-        if count == total {
-            // Last item, don't add a comma
-            _, err := writer.WriteString(fmt.Sprintf("%s: %s\n", key, value))
-            if err != nil {
-                return fmt.Errorf("Error writing to file: %v", err)
-            }
-        } else {
-            // Not the last item, add a comma
-            _, err := writer.WriteString(fmt.Sprintf("%s: %s,\n", key, value))
-            if err != nil {
-                return fmt.Errorf("Error writing to file: %v", err)
-            }
+    // Log all malformed translations after processing
+    if len(malformedTranslations) > 0 {
+        fmt.Printf("\n%d Malformed translations encountered:\n", len(malformedTranslations))
+        for key, value := range malformedTranslations {
+            fmt.Printf("- Key: %s, Response: %s\n", key, value)
         }
     }
 
-    writer.WriteString("}\n")
-
-    // Flush the buffered writer to the file
-    err = writer.Flush()
-    if err != nil {
-        return fmt.Errorf("Error flushing writer: %v", err)
-    }
-
-    return nil
+    return results
 }
 
 func SanitizeKey(input string) string {
@@ -381,7 +503,6 @@ func WriteMapToJSONFileFlutter(originalMap map[string]string, inputLang string) 
     return nil
 }
 
-// translate sends a single translation request and reads the streamed response.
 func translate(url, model, input, output, text string) (string, error) {
 	payload := map[string]interface{}{
 		"model":  model,
@@ -431,54 +552,7 @@ func translate(url, model, input, output, text string) (string, error) {
 	return translationResult, nil
 }
 
-
-// translateConcurrently processes translations in parallel and tracks progress.
-func TranslateConcurrently(url, model, input, output string, texts map[string]string) map[string]string {
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10) // Limit to 10 concurrent requests
-	progress := make(chan string)   // Channel to track progress
-	results := make(map[string]string)
-	resultsMu := sync.Mutex{}
-
-	// Goroutine to monitor progress
-	go func() {
-		total := len(texts)
-		completed := 0
-		for range progress {
-			completed++
-			// Update a single line with carriage return
-			fmt.Printf("\rProgress: %d/%d translations completed", completed, total)
-		}
-		fmt.Println() // New line after all translations are complete
-	}()
-
-	for key, text := range texts {
-		wg.Add(1)
-		sem <- struct{}{} // Acquire a spot
-
-		go func(key, text string) {
-			defer wg.Done()
-			defer func() { <-sem }() // Release the spot
-
-			translatedText, err := translate(url, model, input, output, text)
-			if err != nil {
-				fmt.Printf("Error translating key %q: %v\n", key, err)
-				return
-			}
-
-			// Store result safely
-			resultsMu.Lock()
-			results[key] = strings.TrimSpace(strings.Split(translatedText, ":")[1])
-			resultsMu.Unlock()
-
-			// Send progress update
-			progress <- key
-		}(key, text)
-	}
-
-	// Wait for all translations to complete
-	wg.Wait()
-	close(progress)
-
-	return results
+func ReplaceApos(text string) string {
+    r := strings.NewReplacer(`"`, `'`)
+    return r.Replace(text)
 }

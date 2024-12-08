@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
-	"github.com/azimari-toure-ikbal/translate-core/internal/util" // Import the util package
+	"github.com/azimari-toure-ikbal/sekai-core/internal/util" // Import the util package
 )
 
-func RunForNext(files *[]string, inputLang *string) error {
+func RunForNext(files *[]string, inputLang, outputLang *string) error {
 	if !util.CheckIfNextJS() {
 		return fmt.Errorf("RunForNext:CheckIfNextJS: You must be at the root of a valid NextJS project")
 	}
@@ -26,8 +27,10 @@ func RunForNext(files *[]string, inputLang *string) error {
 		".jsx",
 	}
 
-	if util.ReadConfig() != "" {
-		dirToSkip = append(dirToSkip, strings.Split(util.ReadConfig(), "\n")...)
+	config := util.ReadConfig()
+
+	if config != "" {
+		dirToSkip = append(dirToSkip, strings.Split(config, "\n")...)
 	}
 	
 	err := filepath.Walk(".", func(path string, f os.FileInfo, err error) error {
@@ -84,7 +87,7 @@ func RunForNext(files *[]string, inputLang *string) error {
 				if util.IsDebugMode {
 					originalMap[fmt.Sprintf("%s.%s", tradKey, startLine)] = fmt.Sprintf(" key is %d : val is %s", key, strings.Split(val, ": ")[1])
 				}
-				originalMap[fmt.Sprintf(`"%s.%s"`, tradKey, startLine)] = fmt.Sprintf(`"%s"`, reSpace.ReplaceAllString(strings.TrimSpace(strings.Split(val, ": ")[1]), " "))
+				originalMap[fmt.Sprintf(`"%s.%s"`, tradKey, startLine)] = fmt.Sprintf(`"%s"`, util.ReplaceApos(reSpace.ReplaceAllString(strings.TrimSpace(strings.Split(val, ": ")[1]), " ")))
 			}
 		}
 	}
@@ -95,5 +98,21 @@ func RunForNext(files *[]string, inputLang *string) error {
 		return fmt.Errorf("Something went wrong while writing the input file: %v", err)
 	}
 
+	url := "http://localhost:11434/api/generate"
+	model := "trad"
+	start := time.Now()
+	results := util.TranslateConcurrently(url, model, *inputLang, *outputLang, originalMap)
+	fmt.Printf("All translations completed in %v\n", time.Since(start))
+
+	// for key, val := range results {
+	// 	results[key]
+	// }
+
+	err = util.WriteMapToJSONFile(results, *outputLang)
+
+	if err != nil {
+		return fmt.Errorf("Something went wrong while writing the output file: %v", err)
+	}
+		
 	return nil
 }
