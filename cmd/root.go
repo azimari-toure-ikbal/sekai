@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/azimari-toure-ikbal/sekai-core/internal/nextjs"
+	"github.com/azimari-toure-ikbal/sekai-core/internal/flutter"
+	"github.com/azimari-toure-ikbal/sekai-core/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -12,18 +14,19 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "sekai-core",
 	Short: "CLI Tool written in go to make localization easier",
-	Long: `
-Sekai aims to help developer do localization easier and faster for their project of any size.`,
+	Long: `Sekai aims to help developer do localization easier and faster for their project of any size.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
 		env, _ := cmd.Flags().GetString("env")
 		input, _ := cmd.Flags().GetString("input")
 		output, _ := cmd.Flags().GetString("output")
+		verbose, _ := cmd.Flags().GetBool("verbose") 
 
 		var files []string
 
 		acceptedLang := []string{"fr", "en", "de", "it", "jp", "po", "es"}
+		acceptedEnv := []string{"nextjs", "flutter"}
 		// Helper function to check if the selected language is valid
 		isValidLang := func(lang string, acceptedLangs []string) bool {
 			for _, l := range acceptedLangs {
@@ -32,6 +35,12 @@ Sekai aims to help developer do localization easier and faster for their project
 				}
 			}
 			return false
+		}
+
+			// Enable verbose mode for relevant modules
+		if verbose {
+			fmt.Println("Verbose mode enabled")
+			util.EnableVerbose()
 		}
 
 		if !isValidLang(input, acceptedLang) {
@@ -56,8 +65,14 @@ Sekai aims to help developer do localization easier and faster for their project
 				fmt.Printf("---- Something went wrong: %v ---- \n", err)
 				return
 			}
+		case "flutter":
+			err := flutter.RunForFlutter(&files, &input, &output)
+			if err != nil {
+				fmt.Printf("---- Something went wrong: %v ---- \n", err)
+				return
+			}
 		default:
-			fmt.Printf("You provided a wrong value of env. We only support --env nextjs for the moment")
+			fmt.Printf("Invalid environment. \nSupported environments are: %s", acceptedEnv)
 	}
 	},
 }
@@ -83,6 +98,7 @@ func init() {
 	rootCmd.Flags().StringP("env", "e", "nextjs", "The env of your project")
 	rootCmd.Flags().StringP("input", "i", "", "The input language which correspond to the language of your project")
 	rootCmd.Flags().StringP("output", "o", "", "The desired output language from the localization")
+	rootCmd.Flags().BoolP("verbose", "v", false, "Enable verbose mode")
 }
 
 

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -15,7 +14,7 @@ import (
 	"strconv"
 	"strings"
     "encoding/json"
-    "strconv"
+    // "strconv"
 	"sync"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
@@ -467,10 +466,10 @@ func WriteMapToJSONFileFlutter(originalMap map[string]string, inputLang string) 
         "@@locale": inputLang, // Use inputLang as the locale
     }
 
-    LogVerbose("\nOriginal map: %v", originalMap)
+    // LogVerbose("\nOriginal map: %v", originalMap)
 
     for key, value := range originalMap {
-        LogVerbose("Adding key: '%s', value: '%s'", key, value)
+        // LogVerbose("Adding key: '%s', value: '%s'", key, value)
         data[key] = value
         data[fmt.Sprintf("@%s", key)] = map[string]string{
             "description": value,

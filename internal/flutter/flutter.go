@@ -5,12 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/azimari-toure-ikbal/translate-core/internal/util"
+	"github.com/azimari-toure-ikbal/sekai-core/internal/util"
 )
 
 
-func RunForFlutter(files *[]string, inputLang *string) error {
+func RunForFlutter(files *[]string, inputLang *string, outputLang *string) error {
 	if !util.CheckIfFlutter() {
 		return fmt.Errorf("RunForFlutter:CheckIfFlutter: You must be at the root of a valid Flutter project")
 	}
@@ -67,6 +68,7 @@ func RunForFlutter(files *[]string, inputLang *string) error {
 		if err != nil {
 			return fmt.Errorf("RunForFlutter:ParseFile: error parsing file %v: %v", file, err)
 		}
+		
 		for _, element := range parsed {
 			// Generate keys from parsed strings
 			key := generateFlutterKey(file, element)
@@ -75,10 +77,28 @@ func RunForFlutter(files *[]string, inputLang *string) error {
 		}
 	}
 
+
+
 	// Write translations to `l10n/app_{inputLang}.arb`
-	outputFile := fmt.Sprintf("lib/l10n/app_%s.arb", *inputLang)
+	inputFile := fmt.Sprintf("lib/l10n/app_%s.arb", *inputLang)
+	util.LogVerbose("Writing translations to file: %s", inputFile)
+	err = util.WriteMapToJSONFileFlutter(originalMap, inputFile)
+	if err != nil {
+		return fmt.Errorf("RunForFlutter: error writing translations to file: %v", err)
+	}
+
+	//Make translations
+	url := "http://localhost:11434/api/generate"
+	model := "trad"
+	start := time.Now()
+	results := util.TranslateConcurrently(url, model, *inputLang, *outputLang, originalMap)
+	fmt.Printf("All translations completed in %v\n", time.Since(start))
+
+	// Write translations to `l10n/app_{outputLang}.arb`
+	outputFile := fmt.Sprintf("lib/l10n/app_%s.arb", *outputLang)
 	util.LogVerbose("Writing translations to file: %s", outputFile)
-	err = util.WriteMapToJSONFileFlutter(originalMap, outputFile)
+	err = util.WriteMapToJSONFileFlutter(results, outputFile)
+
 	if err != nil {
 		return fmt.Errorf("RunForFlutter: error writing translations to file: %v", err)
 	}

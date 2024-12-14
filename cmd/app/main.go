@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/azimari-toure-ikbal/translate-core/internal"
+	"github.com/azimari-toure-ikbal/sekai-core/internal"
 )
 
 // func gracefulShutdown() {

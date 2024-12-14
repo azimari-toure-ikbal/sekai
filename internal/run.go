@@ -4,9 +4,9 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/azimari-toure-ikbal/translate-core/internal/nextjs"
-	"github.com/azimari-toure-ikbal/translate-core/internal/flutter"
-	"github.com/azimari-toure-ikbal/translate-core/internal/util"
+	"github.com/azimari-toure-ikbal/sekai-core/internal/nextjs"
+	"github.com/azimari-toure-ikbal/sekai-core/internal/flutter"
+	"github.com/azimari-toure-ikbal/sekai-core/internal/util"
 )
 
 func Run() error {
